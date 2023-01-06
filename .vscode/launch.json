@@ -11,7 +11,18 @@
       "name": "Launch Extension",
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
       "request": "launch",
-      "type": "pwa-extensionHost"
+      "type": "extensionHost"
+    },
+    {
+    "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionTestsPath=${workspaceFolder}/src"
+      ],
+      "outFiles": ["${workspaceFolder}/out/test/**/*.js"]
     }
   ]
 }
