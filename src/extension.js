@@ -203,6 +203,9 @@ async function incVersion() {
     // • incVersion - Notify user of new version • 
     vscode.window.showInformationMessage(`Version Bumped to ${newVersion}`);
     myStatusBarItem.text = '$(versions) ' + projectName + ' ' + 'v' + newVersion;
+
+    libraryPath = join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'library.json');
+    json_updateVersion(libraryPath,newVersion);
     updateOtherFiles(newVersion);
 };
 
@@ -676,6 +679,43 @@ async function initSettingsFilePath(context) {
     fs.writeFileSync(exampleMDFilePath, exampleMD, 'utf8');
     fs.writeFileSync(exampleJSFilePath, exampleJS, 'utf8');
 };
+
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                           ● Function incVersion ●                            │
+//  │                                                                              │
+//  │                        • Increment Project Version •                         │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+async function json_updateVersion(FilePath,newVersion) {
+    // • incVersion - Verify package.json exists • 
+    //packagePath = join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'package.json');
+    if (!fs.existsSync(FilePath)) {
+        vscode.window.showWarningMessage('No '+FilePath+ ' json File Found!');
+        return;
+    };
+    vscode.window.showWarningMessage('File Found!: ' + FilePath );
+    // • incVersion - Read package.json into memory • 
+    console.log('The path exists.'+ FilePath);
+    const FileContent = await readFile(FilePath);
+    vscode.window.showWarningMessage('File Read!: ' + FilePath );
+    console.log('The path exists.2  ');
+    const FileContentJson = JSON.parse(FileContent.toString());
+    vscode.window.showWarningMessage('File JSON!: ' + FilePath );
+
+    // • incVersion - Inititialize possible new version values • 
+    const versionOld = FileContentJson['version'];
+    // • decVersion - Replace original file version with new one • 
+    FileContentJson.version = newVersion;
+    FileContentJson.version_old = versionOld;
+    vscode.window.showWarningMessage('File Found!');
+
+    // • decVersion - Update package.json with new version • 
+    fs.writeFileSync(FilePath, JSON.stringify(FileContentJson, null, '\t'));
+
+
+}
+
+
 
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
 //  │                           ● Function deactivate ●                            │

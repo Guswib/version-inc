@@ -1,0 +1,6 @@
+{
+	"name": "version-inc",
+	"displayName": "Version Inc",
+	"description": "Increments the version in package.json file",
+	"version": "1.0.0"
+}
