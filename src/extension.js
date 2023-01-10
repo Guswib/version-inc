@@ -9,10 +9,14 @@ module.exports = {
     deactivate,
 };
 
+const projectSettingsFileName ='version-inc.json';
+
 let myStatusBarItem;
 let myContext;
 let globalSettingsPath;
 let globalSettingsFile;
+let projectSettingsPath;
+let projectSettingsFile;
 let packageJsonFile;
 let projectName;
 let settings = vscode.workspace.getConfiguration("version-inc");
@@ -31,6 +35,7 @@ async function activate(context) {
     vscode.commands.executeCommand('setContext', 'version-inc.workspaceHasPackageJSON', true);
     //---------------------------------------------------------------------------------------------------------
     globalSettingsPath = context.globalStoragePath;
+    projectSettingsPath = vscode.workspace.workspaceFolders[0].uri.fsPath+ '\\' + '.vcode';
     packageJsonFile = join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'package.json');
     packageFile = await readFile(packageJsonFile);      // Read file into memory
     packageJson = JSON.parse(packageFile.toString());   // Parse json
@@ -42,6 +47,7 @@ async function activate(context) {
     globalSettingsFile = globalSettingsPath + '\\' + 'version-inc-' + projectName + '.json';    // Files list json file
     globalExampleFileJS = globalSettingsPath + '\\' + 'example.js';                             // Example JS file
     globalExampleFileMD = globalSettingsPath + '\\' + 'example.md';                             // Example MD file
+    projectSettingsFilePath = projectSettingsPath + '\\' + projectSettingsFileName;
     myContext = context;                    // Save context
     await initSettingsFilePath(context);    // Initialize settings and example files
     createStatusBarItem();                  // Create status bar item
@@ -152,6 +158,7 @@ async function incVersion() {
         return;
     };
 
+    
     // • incVersion - Read package.json into memory • 
     const packageFile = await readFile(this.packagePath);
     const packageJson = JSON.parse(packageFile.toString());
@@ -206,6 +213,10 @@ async function incVersion() {
 
     libraryPath = join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'library.json');
     json_updateVersion(libraryPath,newVersion);
+    
+    // • incVersion - Store last version in the project settings file. •
+    updateVersion_JSON(projectSettingsFilePath, Version);
+    updateOtherJsonFiles(newVersion);
     updateOtherFiles(newVersion);
 };
 
@@ -346,6 +357,43 @@ async function editExampleFiles() {
     await vscode.window.showTextDocument(document1);
     await vscode.window.showTextDocument(document2);
 };
+
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                        ● Function updateOtherJSONFiles ●                     │
+//  │                                                                              │
+//  │                 • Update Other JSON Files with the New Version •                  │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+async function updateOtherJsonFiles(newVersion) {
+
+    // • updateOtherFiles - Load settings file into memory • 
+    const projectSettingsFileContent = await readFile(projectSettingsFilePath);
+    const projectSettingsJson = JSON.parse(projectSettingsFileContent.toString("utf-8"));
+    const length = projectSettingsJson['json-filepaths']['length'];
+
+    // • updateOtherFiles - Loop through all files in the settings file • 
+    for (let i = 0; i < length; i++) {
+        var file = projectSettingsJson['json-filepaths'][i]['Filename']; // File name
+        var location = projectSettingsJson['json-filepaths'][i]['FileLocation']; // File Location
+        if (location == "${workspaceFolder}") { // Workspace variable folder provided
+            var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        } else if (location == "${globalStorage}") { // Global storage for example files
+            var location = myContext.globalStoragePath;
+        } else if (location == "") { // Default to workspace folder if none is provided
+            var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        } else {
+            var location = vscode.workspace.workspaceFolders[0].uri.fsPath + '\\' + location; // Path relative to workspace folder
+        }
+        var enable = packageJson['json-filepaths'][i]['Enable'];                      // Enable replace flag
+        // • updateOtherFiles - Retrieve the rest of the settings • 
+        
+        if (enable) {
+            let targetFile = join(location, file);                              // Full path to target file
+            updateVersion_JSON(targetFile,newVersion);
+        }
+    }
+};
+
 
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
 //  │                        ● Function updateOtherFiles ●                         │
@@ -653,6 +701,46 @@ async function initSettingsFilePath(context) {
                       '//\n' +
                       '// Product version: v-inc\n' +
                       '//--------------------------------------------------\n';
+        // • initSettingsFilePath - Default files list settings json file • 
+        const LocalSettings = 
+        '{\n' +
+        '\t\"lastVersion\": 0.0.0,' +
+        '\t\"json-files\": [\n' +
+        '\t\t{\n' +
+        '\t\t\t\"Filename\": \"File1.json\",\n\t\t' +
+        '\t\t\t\"FileLocation\": \"\",\n\t\t' +
+        '\t\t\t\"Enable\": false,\n\t\t' +
+        '\t\t},\n' +
+        '\t\t{\n' +
+        '\t\t\t\"Filename\": \"File2.json\",\n\t\t' +
+        '\t\t\t\"FileLocation\": \"\",\n\t\t' +
+        '\t\t\t\"Enable\": false,\n\t\t' +
+        '\t\t}\n' +
+        '\t],\n' +
+        '\"Files\": [\n' +
+        '\t{\n\t\t' +
+        '\t\"Filename\": \"File1.ABC\",\n\t\t' +
+        '\t\"FileLocation\": \"\",\n\t\t' +
+        '\t\"Enable\": false,\n\t\t' +
+        '\t\"RetainLine\": true,\n\t\t' +
+        '\t\"InsertBefore\": \"\",\n\t\t' +
+        '\t\"InsertAfter\": \"\",\n\t\t' +
+        '\t\"TrimTextStart\": 5,\n\t\t' +
+        '\t\"TrimTextEnd\": 38\n\t' +
+        '},\n\t' +
+        '{\n\t\t' +
+        '\t\"Filename\": \"File2.ABC\",\n\t\t' +
+        '\t\"FileLocation\": \"${workspace}\",\n\t\t' +
+        '\t\"Enable\": false,\n\t\t' +
+        '\t\"RetainLine\": false,\n\t\t' +
+        '\t\"InsertBefore\": \"v\",\n\t\t' +
+        '\t\"InsertAfter\": \"-Beta\",\n\t\t' +
+        '\t\"TrimTextStart\": 0,\n\t\t' +
+        '\t\"TrimTextEnd\": 0\n\t' +
+        '}\n' +
+        ']\n' +
+        '}\n' 
+        ;
 
     // • initSettingsFilePath - If folder does exist then verifiy extensions files exist • 
     if (fs.existsSync(globalSettingsPath)) {
@@ -668,6 +756,11 @@ async function initSettingsFilePath(context) {
             // Write example.js file if it does not exist
             fs.writeFileSync(globalExampleFileJS, exampleJS, 'utf8');
             }
+        if (!fs.existsSync(localSettingsFile)) {
+               // Write example.js file if it does not exist
+            fs.writeFileSync(localSettingsFile, localSettings, 'utf8');
+            }
+            return;
         return;
     }
 
@@ -678,6 +771,56 @@ async function initSettingsFilePath(context) {
     fs.writeFileSync(globalSettingsFile, defaultSettings, 'utf8');
     fs.writeFileSync(exampleMDFilePath, exampleMD, 'utf8');
     fs.writeFileSync(exampleJSFilePath, exampleJS, 'utf8');
+    // • initSettingsPath - Create Local Storage Folder and File • 
+    fs.mkdirSync(localSettingsPath, { recursive: true });
+    fs.writeFileSync(localSettingsFile, localSettings, 'utf8');
+};
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                        ● Function updateOtherFiles ●                         │
+//  │                                                                              │
+//  │                 • Update Other Files with the New Version •                  │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+async function updatelocalSettings(oldVersion) {
+        // • incVersion - Verify package.json exists • 
+        
+        if (!fs.existsSync(localSettingsFile)) {
+            vscode.window.showWarningMessage('No '+ localSettingsFileName + ' file found in /.vcode!');
+            return;
+        };
+    
+        updateVersion_JSON(localSettingsFile,oldVersion);
+    
+        
+        const settingsFile = await readFile(this.packagePath);
+        const settingsJson = JSON.parse(settingsFile.toString());
+        
+        // • incVersion - Inititialize possible new version values • 
+        const version = packageJson['version'];
+        packageJson.version = oldVersion;
+        // • incVersion - Update package.json with new version • 
+        fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, '\t'));
+       
+};
+
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                        ● Function updateVersion of Json file ●                         │
+//  │                                                                              │
+//  │                                 │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+async function updateVersion_JSON(JsonFilePath,newVersion) {
+    // • incVersion - Verify JSON file exists • 
+    
+    if (!fs.existsSync(JsonFilePath)) {
+        return;
+    };
+    const JsonFile = await readFile(this.JsonFilePath);
+    const contentJson = JSON.parse(JsonFile.toString());
+    
+    contentJson.version = newVersion;
+    // • Update json with new version • 
+    fs.writeFileSync(JsonFilePath, JSON.stringify(contentJson, null, '\t'));
 };
 
 
