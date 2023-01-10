@@ -15,19 +15,21 @@ let myStatusBarItem;
 let myContext;
 let globalSettingsPath;
 let globalSettingsFile;
-let projectSettingsPath;
-let projectSettingsFile;
+let projectSettingsPath;    //Path to projectSettingsile.
+let projectSettingsFilePath;
 let packageJsonFile;
 let projectName;
 let settings = vscode.workspace.getConfiguration("version-inc");
 let promptStatusBarCommand = settings.get("statusBarPrompt");
 let useDisplayNameStatusBar = settings.get("useDisplayName");
+let glob_last_dateTime;
+let glob_dateTime;
 
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
 //  │                            ● Function Activate ●                             │
 //  ╰──────────────────────────────────────────────────────────────────────────────╯
 async function activate(context) {
-
+    console.log("activate version-inc");
     // • Activate - Initialize Extension • 
     //---------------------------------------------------------------------------------------------------------
     // "activationEvents" - "workspaceContains:package.json" in manifest ensures folder has a package.json file
@@ -35,7 +37,7 @@ async function activate(context) {
     vscode.commands.executeCommand('setContext', 'version-inc.workspaceHasPackageJSON', true);
     //---------------------------------------------------------------------------------------------------------
     globalSettingsPath = context.globalStoragePath;
-    projectSettingsPath = vscode.workspace.workspaceFolders[0].uri.fsPath+ '\\' + '.vcode';
+    projectSettingsPath = vscode.workspace.workspaceFolders[0].uri.fsPath+ '\\' + '.vscode';
     packageJsonFile = join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'package.json');
     packageFile = await readFile(packageJsonFile);      // Read file into memory
     packageJson = JSON.parse(packageFile.toString());   // Parse json
@@ -75,7 +77,14 @@ async function activate(context) {
         };
     }, null, context.subscriptions);
 
-
+    const FileContentJson= await getProjectSettings();
+    console.log("Project Settings loaded");
+    if(FileContentJson!=""){
+        glob_dateTime = FileContentJson['dateTime'];
+        glob_last_dateTime = FileContentJson['last_dateTime'];
+        console.log("Global variables set");
+    }
+    console.log("done activating\n\n");
 };
 
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
@@ -100,7 +109,7 @@ function createStatusBarItem() {
     if (myStatusBarItem === undefined) {
         myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1); // Place on left side of status bar
         myStatusBarItem.command = 'version-inc.version-pick';       // Set command to version inc/dec picker command
-        myStatusBarItem.tooltip = 'Update package.json version';    // Set tooltip text
+        myStatusBarItem.tooltip = 'Update version of package.JSON, as well as other  files';    // Set tooltip text
     }
 };
 
@@ -157,7 +166,7 @@ async function incVersion() {
         vscode.window.showWarningMessage('No package.json File Found!');
         return;
     };
-
+    
     
     // • incVersion - Read package.json into memory • 
     const packageFile = await readFile(this.packagePath);
@@ -203,21 +212,24 @@ async function incVersion() {
 
     // • incVersion - Choose new version • 
     const newVersion = versions[pick.label.toLowerCase()];
-    // • incVersion - Replace original file version with new one • 
-    packageJson.version = newVersion;
-    // • incVersion - Update package.json with new version • 
-    fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, '\t'));
+    
     // • incVersion - Notify user of new version • 
     vscode.window.showInformationMessage(`Version Bumped to ${newVersion}`);
     myStatusBarItem.text = '$(versions) ' + projectName + ' ' + 'v' + newVersion;
 
-    libraryPath = join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'library.json');
-    json_updateVersion(libraryPath,newVersion);
-    
+    glob_last_dateTime = glob_dateTime;
+    glob_dateTime = getCurrentDateTime();
+   
     // • incVersion - Store last version in the project settings file. •
-    updateVersion_JSON(projectSettingsFilePath, Version);
-    updateOtherJsonFiles(newVersion);
-    updateOtherFiles(newVersion);
+    const SettingsContentJson =await updateProjectSettings(newVersion); //updates project SEttings
+    // • incVersion - update the package.json • 
+    await updateVersion_JSON(packagePath,newVersion);
+     
+    console.log('Date:\"' + glob_dateTime.year +'\" newDate: \"'+ glob_dateTime.year+'\"');
+    await updateOtherJsonFiles(newVersion);
+
+    await updateOtherTxtFiles(newVersion,glob_dateTime,version, glob_last_dateTime);
+    await updateOtherFiles(newVersion);
 };
 
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
@@ -362,34 +374,53 @@ async function editExampleFiles() {
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
 //  │                        ● Function updateOtherJSONFiles ●                     │
 //  │                                                                              │
-//  │                 • Update Other JSON Files with the New Version •                  │
+//  │                 • Update Other JSON Files with the New Version •             │
 //  ╰──────────────────────────────────────────────────────────────────────────────╯
 async function updateOtherJsonFiles(newVersion) {
 
-    // • updateOtherFiles - Load settings file into memory • 
+    // • updateOther JSON Files - Load settings file into memory • 
     const projectSettingsFileContent = await readFile(projectSettingsFilePath);
     const projectSettingsJson = JSON.parse(projectSettingsFileContent.toString("utf-8"));
-    const length = projectSettingsJson['json-filepaths']['length'];
-
-    // • updateOtherFiles - Loop through all files in the settings file • 
+    const length = projectSettingsJson['json-files']['length'];
+    const listOfjsonFiles= projectSettingsJson['json-files'];
+    // • updateOther JSON Files - Loop through all files in the settings file • 
     for (let i = 0; i < length; i++) {
-        var file = projectSettingsJson['json-filepaths'][i]['Filename']; // File name
-        var location = projectSettingsJson['json-filepaths'][i]['FileLocation']; // File Location
-        if (location == "${workspaceFolder}") { // Workspace variable folder provided
-            var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        } else if (location == "${globalStorage}") { // Global storage for example files
-            var location = myContext.globalStoragePath;
-        } else if (location == "") { // Default to workspace folder if none is provided
-            var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        } else {
-            var location = vscode.workspace.workspaceFolders[0].uri.fsPath + '\\' + location; // Path relative to workspace folder
-        }
-        var enable = packageJson['json-filepaths'][i]['Enable'];                      // Enable replace flag
+        var fileName = listOfjsonFiles[i]['Filename']; // File name
+        var location = listOfjsonFiles[i]['FileLocation']; // File Location
+        var targetFilePath= sub_2_filepath(location, fileName);         // Full path to target file
+        var enable = listOfjsonFiles[i]['Enable'];                      // Enable replace flag
         // • updateOtherFiles - Retrieve the rest of the settings • 
         
         if (enable) {
-            let targetFile = join(location, file);                              // Full path to target file
-            updateVersion_JSON(targetFile,newVersion);
+            updateVersion_JSON(targetFilePath,newVersion);
+        }
+    }
+};
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                        ● Function updateOtherTxtFiles ●                     │
+//  │                                                                              │
+//  │                 • Update Other JSON Files with the New Version •             │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+async function updateOtherTxtFiles(newVersion,newDate,last_version,last_dateTime) {
+
+    // • updateOtherTxtFiles - Load settings file into memory • 
+    const projectSettingsFileContent = await readFile(projectSettingsFilePath);
+    const projectSettingsJson = JSON.parse(projectSettingsFileContent.toString("utf-8"));
+    const length = projectSettingsJson['txt-files']['length'];
+    const list_Of_other_Files= projectSettingsJson['txt-files'];
+    
+    // • Loop through all files in the settings file • 
+    for (let i = 0; i < length; i++) {
+        var fileName = list_Of_other_Files[i]['Filename']; // File name
+        var location = list_Of_other_Files[i]['FileLocation']; // File Location
+        var targetFilePath= sub_2_filepath(location, fileName);         // Full path to target file
+        var enable = list_Of_other_Files[i]['Enable'];                      // Enable replace flag
+        var patterns = list_Of_other_Files[i]['Patterns'];                      // Enable replace flag
+        // • updateOtherFiles - Retrieve the rest of the settings • 
+        
+        if (enable) {
+            updateVersion_txtFile(targetFilePath,patterns,newVersion,newDate,last_version,last_dateTime);
         }
     }
 };
@@ -409,17 +440,11 @@ async function updateOtherFiles(newVersion) {
 
     // • updateOtherFiles - Loop through all files in the settings file • 
     for (let i = 0; i < length; i++) {
-        var file = packageJson[i]['Filename']; // File name
+        var fileName = packageJson[i]['Filename']; // File name
         var location = packageJson[i]['FileLocation']; // File Location
-        if (location == "${workspaceFolder}") { // Workspace variable folder provided
-            var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        } else if (location == "${globalStorage}") { // Global storage for example files
-            var location = myContext.globalStoragePath;
-        } else if (location == "") { // Default to workspace folder if none is provided
-            var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        } else {
-            var location = vscode.workspace.workspaceFolders[0].uri.fsPath + '\\' + location; // Path relative to workspace folder
-        }
+        
+        var targetFilePath= sub_2_filepath(location, fileName);         // Full path to target file
+
 
         // • updateOtherFiles - Retrieve the rest of the settings • 
         var enable = packageJson[i]['Enable'];                      // Enable replace flag
@@ -546,8 +571,7 @@ async function updateOtherFiles(newVersion) {
 
         // • updateOtherFiles - If this files update flag is enabled then process it • 
         if (enable) {
-            let targetFile = join(location, file);                              // Full path to target file
-            var document = await vscode.workspace.openTextDocument(targetFile); // Open the file
+            var document = await vscode.workspace.openTextDocument(targetFilePath); // Open the file
             await vscode.window.showTextDocument(document);                     // Show the selected file
             const editor = vscode.window.activeTextEditor;
 
@@ -661,7 +685,7 @@ async function updateOtherFiles(newVersion) {
 //  │              • Global Storage Settings File for My Extension •               │
 //  ╰──────────────────────────────────────────────────────────────────────────────╯
 async function initSettingsFilePath(context) {
-
+    console.log('Create ini files');
     // • initSettingsFilePath - Default files list settings json file • 
     const defaultSettings = '[\n\t' +
                             '{\n\t\t' +
@@ -702,110 +726,105 @@ async function initSettingsFilePath(context) {
                       '// Product version: v-inc\n' +
                       '//--------------------------------------------------\n';
         // • initSettingsFilePath - Default files list settings json file • 
-        const LocalSettings = 
-        '{\n' +
-        '\t\"lastVersion\": 0.0.0,' +
-        '\t\"json-files\": [\n' +
-        '\t\t{\n' +
-        '\t\t\t\"Filename\": \"File1.json\",\n\t\t' +
-        '\t\t\t\"FileLocation\": \"\",\n\t\t' +
-        '\t\t\t\"Enable\": false,\n\t\t' +
-        '\t\t},\n' +
-        '\t\t{\n' +
-        '\t\t\t\"Filename\": \"File2.json\",\n\t\t' +
-        '\t\t\t\"FileLocation\": \"\",\n\t\t' +
-        '\t\t\t\"Enable\": false,\n\t\t' +
-        '\t\t}\n' +
-        '\t],\n' +
-        '\"Files\": [\n' +
-        '\t{\n\t\t' +
-        '\t\"Filename\": \"File1.ABC\",\n\t\t' +
-        '\t\"FileLocation\": \"\",\n\t\t' +
-        '\t\"Enable\": false,\n\t\t' +
-        '\t\"RetainLine\": true,\n\t\t' +
-        '\t\"InsertBefore\": \"\",\n\t\t' +
-        '\t\"InsertAfter\": \"\",\n\t\t' +
-        '\t\"TrimTextStart\": 5,\n\t\t' +
-        '\t\"TrimTextEnd\": 38\n\t' +
-        '},\n\t' +
-        '{\n\t\t' +
-        '\t\"Filename\": \"File2.ABC\",\n\t\t' +
-        '\t\"FileLocation\": \"${workspace}\",\n\t\t' +
-        '\t\"Enable\": false,\n\t\t' +
-        '\t\"RetainLine\": false,\n\t\t' +
-        '\t\"InsertBefore\": \"v\",\n\t\t' +
-        '\t\"InsertAfter\": \"-Beta\",\n\t\t' +
-        '\t\"TrimTextStart\": 0,\n\t\t' +
-        '\t\"TrimTextEnd\": 0\n\t' +
-        '}\n' +
-        ']\n' +
-        '}\n' 
-        ;
+        console.log('Create project settings');
+        let projectSettingsIni=""; 
+        console.log('Create project settings1');
+        projectSettingsIni=JSON.parse('{\"version\" : \"0.0.0\",\"dateTime\": { },\"last_version\": \"0.0.0\",\"last_dateTime\": { }, \"json-files\": [ ],\"txt-files\": [ ] }');
+        console.error('Create project settings1');
+        let exampleJSON1=JSON.parse('{\"Filename\": \"File1.json\",\"FileLocation\": \"${workspaceFolder}\",\"Enable\": true }');
+        console.log('Create project settings2');
+        let exampleJSON2=JSON.parse('{\"Filename\": \"File2.json\",\"FileLocation\": \"${workspaceFolder}\",\"Enable\": true }');
+        console.log('Create project settings3');
+        let exampleTxtFile1=JSON.parse('{\"Filename\": \"File1.ABC\",\"FileLocation\": \"${workspaceFolder}\",\"Enable\": true ,\"Patterns\": [\"Version v-inc\"] }' );
+        let exampleTxtFile2=JSON.parse('{\"Filename\": \"File2.ABC\",\"FileLocation\": \"${workspaceFolder}\",\"Enable\": true ,\"Patterns\": [\"File Version...: V-INC\", \"Product version: v-inc\",\"Last Modification: ${MONTHTEXTL} ${DATE} ${YEAR4}\",\"     At: ${H12}:${MIN}:${SEC} ${AMPMU}\"] }' );
+        
+        projectSettingsIni['json-files']=[exampleJSON1, exampleJSON2];
+        projectSettingsIni['txt-files']=[exampleTxtFile1, exampleTxtFile2];
 
-    // • initSettingsFilePath - If folder does exist then verifiy extensions files exist • 
-    if (fs.existsSync(globalSettingsPath)) {
-        if (!fs.existsSync(globalSettingsFile)) {
-            // Write new settings file if it does not exist
-            fs.writeFileSync(globalSettingsFile, defaultSettings, 'utf8');
-        }
-        if (!fs.existsSync(globalExampleFileMD)) {
-            // Write example.md file if it does not exist
-            fs.writeFileSync(globalExampleFileMD, exampleMD, 'utf8');
-        }
-        if (!fs.existsSync(globalExampleFileJS)) {
-            // Write example.js file if it does not exist
-            fs.writeFileSync(globalExampleFileJS, exampleJS, 'utf8');
-            }
-        if (!fs.existsSync(localSettingsFile)) {
-               // Write example.js file if it does not exist
-            fs.writeFileSync(localSettingsFile, localSettings, 'utf8');
-            }
-            return;
-        return;
+    // • initSettingsFilePath - If global settingsfolder does not exist then create it • 
+    if (!fs.existsSync(globalSettingsPath)) {
+        fs.mkdirSync(globalSettingsPath, { recursive: true });
+    }    
+        // Write new settings file if it does not exist
+    if (!fs.existsSync(globalSettingsFile)) {
+        // Write new settings file if it does not exist
+        fs.writeFileSync(globalSettingsFile, defaultSettings, 'utf8');
     }
-
+    if (!fs.existsSync(globalExampleFileMD)) {
+        // Write example.md file if it does not exist
+        fs.writeFileSync(globalExampleFileMD, exampleMD, 'utf8');
+    }
+    if (!fs.existsSync(globalExampleFileJS)) {
+        // Write example.js file if it does not exist
+        fs.writeFileSync(globalExampleFileJS, exampleJS, 'utf8');
+        }
     // • initSettingsFilePath - Create Global Storage Folder and Files • 
-    fs.mkdirSync(globalSettingsPath, { recursive: true });
+    
     const exampleMDFilePath = path.join(globalSettingsPath, 'example.md');
     const exampleJSFilePath = path.join(globalSettingsPath, 'example.js');
-    fs.writeFileSync(globalSettingsFile, defaultSettings, 'utf8');
     fs.writeFileSync(exampleMDFilePath, exampleMD, 'utf8');
     fs.writeFileSync(exampleJSFilePath, exampleJS, 'utf8');
-    // • initSettingsPath - Create Local Storage Folder and File • 
-    fs.mkdirSync(localSettingsPath, { recursive: true });
-    fs.writeFileSync(localSettingsFile, localSettings, 'utf8');
+
+    // • initSettingsPath - Create project Storage Folder and File • 
+    if (!fs.existsSync(projectSettingsPath)) {
+        fs.mkdirSync(projectSettingsPath, { recursive: true });
+    }
+    if (!fs.existsSync(projectSettingsFilePath)) {
+        console.log('Creat Project Settings file at ' + projectSettingsFilePath);
+
+        fs.writeFileSync(projectSettingsFilePath, JSON.stringify(projectSettingsIni, null, '\t'));
+        }
 };
 
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
-//  │                        ● Function updateOtherFiles ●                         │
+//  │                        ● Function updateProjectSettings ●                    │
 //  │                                                                              │
-//  │                 • Update Other Files with the New Version •                  │
+//  │                 • Update Project Settings with the New Version •              │
 //  ╰──────────────────────────────────────────────────────────────────────────────╯
-async function updatelocalSettings(oldVersion) {
-        // • incVersion - Verify package.json exists • 
+async function updateProjectSettings(newVersion) {
+        // • incVersion - Verify that a project settings file exists • 
+   
+    const FileContentJson= await getProjectSettings();
+    if(FileContentJson!=""){
+        // • incVersion - Read the current version and saves the values to last_version • 
+        FileContentJson.last_version = FileContentJson['version'];
+        // • decVersion - Replace original file version with new one • 
+        FileContentJson.version = newVersion;
         
-        if (!fs.existsSync(localSettingsFile)) {
-            vscode.window.showWarningMessage('No '+ localSettingsFileName + ' file found in /.vcode!');
-            return;
-        };
+        FileContentJson.last_dateTime = FileContentJson.dateTime;
+        FileContentJson.dateTime = getCurrentDateTime();
     
-        updateVersion_JSON(localSettingsFile,oldVersion);
+        // • decVersion - Update package.json with new version • 
+        fs.writeFileSync(projectSettingsFilePath, JSON.stringify(FileContentJson, null, '\t'));
+        
+    }
+    return FileContentJson;
+};
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                        ● Function updateProjectSettings ●                    │
+//  │                                                                              │
+//  │                 • Update Project Settings with the New Version •              │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+async function getProjectSettings() {
+    // • incVersion - Verify that a project settings file exists • 
     
-        
-        const settingsFile = await readFile(this.packagePath);
-        const settingsJson = JSON.parse(settingsFile.toString());
-        
-        // • incVersion - Inititialize possible new version values • 
-        const version = packageJson['version'];
-        packageJson.version = oldVersion;
-        // • incVersion - Update package.json with new version • 
-        fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, '\t'));
-       
+    if (!fs.existsSync(projectSettingsFilePath)) {
+        vscode.window.showWarningMessage('No '+ projectSettingsFileName + ' file found in /.vcode!');
+        return "";
+    }else{
+        const FileContent = await readFile(projectSettingsFilePath);
+        const FileContentJson = JSON.parse(FileContent.toString("utf-8"));
+
+        // • incVersion - Returns the file content • 
+        return FileContentJson;
+    }
 };
 
 
+
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
-//  │                        ● Function updateVersion of Json file ●                         │
+//  │                        ● Function updateVersion of Json file ●                 │
 //  │                                                                              │
 //  │                                 │
 //  ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -813,53 +832,233 @@ async function updateVersion_JSON(JsonFilePath,newVersion) {
     // • incVersion - Verify JSON file exists • 
     
     if (!fs.existsSync(JsonFilePath)) {
+        vscode.window.showWarningMessage('No '+JsonFilePath+ ' json File Found!');
+        console.error('No file found at ' + JsonFilePath);
         return;
-    };
-    const JsonFile = await readFile(this.JsonFilePath);
-    const contentJson = JSON.parse(JsonFile.toString());
-    
-    contentJson.version = newVersion;
-    // • Update json with new version • 
-    fs.writeFileSync(JsonFilePath, JSON.stringify(contentJson, null, '\t'));
+    }else{
+        const JsonFile = await readFile(JsonFilePath);
+        const contentJson = JSON.parse(JsonFile.toString("utf-8"));
+        contentJson.version = newVersion;
+        // • Update json with new version • 
+        fs.writeFileSync(JsonFilePath, JSON.stringify(contentJson, null, '\t'));
+    }
 };
 
-
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
-//  │                           ● Function incVersion ●                            │
+//  │                        ● Function updateVersion of text file ●                 │
 //  │                                                                              │
-//  │                        • Increment Project Version •                         │
+//  │                                 │
 //  ╰──────────────────────────────────────────────────────────────────────────────╯
-async function json_updateVersion(FilePath,newVersion) {
-    // • incVersion - Verify package.json exists • 
-    //packagePath = join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'package.json');
+async function updateVersion_txtFile(FilePath,patterns,newVersion,new_dateTime,lastVersion,last_dateTime) {
+    // • incVersion - Verify JSON file exists • 
+    console.log('UpdateVersion_OtherFiles  ');
     if (!fs.existsSync(FilePath)) {
-        vscode.window.showWarningMessage('No '+FilePath+ ' json File Found!');
+        vscode.window.showWarningMessage('No '+FilePath+ '  File Found!');
+        console.log('No file found at ' + FilePath);
         return;
     };
-    vscode.window.showWarningMessage('File Found!: ' + FilePath );
-    // • incVersion - Read package.json into memory • 
-    console.log('The path exists.'+ FilePath);
-    const FileContent = await readFile(FilePath);
-    vscode.window.showWarningMessage('File Read!: ' + FilePath );
-    console.log('The path exists.2  ');
-    const FileContentJson = JSON.parse(FileContent.toString());
-    vscode.window.showWarningMessage('File JSON!: ' + FilePath );
-
-    // • incVersion - Inititialize possible new version values • 
-    const versionOld = FileContentJson['version'];
-    // • decVersion - Replace original file version with new one • 
-    FileContentJson.version = newVersion;
-    FileContentJson.version_old = versionOld;
-    vscode.window.showWarningMessage('File Found!');
-
-    // • decVersion - Update package.json with new version • 
-    fs.writeFileSync(FilePath, JSON.stringify(FileContentJson, null, '\t'));
+    if(!patterns){
+        console.log('No patterns found for ' + FilePath);
+        return;
+    }
+    console.log('File found at ' + FilePath);
+    console.log('LastVersion:\"' + lastVersion+'\" newVersion: \"'+ newVersion+'\"');
+    console.log('Date:\"' + last_dateTime.year +'\" newDate: \"'+ new_dateTime.year+'\"');
+            
+    var rawFileContent = await readFile(FilePath);
+    var txtFileContent = rawFileContent.toString();
+    const length = patterns.length;
 
 
+    // • updateOther Files - Loop through all files in the pattern • 
+    for (let i = 0; i < length; i++) {
+        let pattern = patterns[i];
+        var lastVersionString=sub_regExpression(pattern,lastVersion,last_dateTime) ;   
+        var newVersionString =sub_regExpression(pattern,newVersion,new_dateTime) ;  
+    
+    // • updateOtherFiles - Perform all string replacements on current line •  
+        console.log('Replace:\"' + pattern+'\" with \"'+ newVersionString+'\"');
+        var txtFileContent = txtFileContent.replace(pattern,newVersionString); //splaces all "v-inc"
+        console.log('Replace:' + lastVersionString + ' with '+ newVersionString);
+       var txtFileContent = txtFileContent.replace(lastVersionString, newVersionString);
+    }
+    //contentJson.version = newVersion;
+    // • Update json with new version • 
+    fs.writeFileSync(FilePath, txtFileContent);
+};
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                           ● Function sub_2_filepath ●                        │
+//  │                                                                              │
+//  │                       • Creates a ful path to a file •                       │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+function sub_2_filepath(location, fileName) {
+    if (location == "${workspaceFolder}") { // Workspace variable folder provided
+        var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    } else if (location == "${globalStorage}") { // Global storage for example files
+        var location = myContext.globalStoragePath;
+    } else if (location == "") { // Default to workspace folder if none is provided
+        var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    } else {
+        var location = vscode.workspace.workspaceFolders[0].uri.fsPath + '\\' + location; // Path relative to workspace folder
+    }
+    let targetFilePath = join(location, fileName);                              // Full path to target file
+    return targetFilePath;
+}
+
+//  ╭──────────────────────────────────────────────────────────────────────────────╮
+//  │                           ● Function sub_regExpression ●                        │
+//  │                                                                              │
+//  │                       • updates the pattern to remove the short codes •                       │
+//  ╰──────────────────────────────────────────────────────────────────────────────╯
+
+function sub_regExpression(pattern, version, date)
+{
+    const vincRegex = /v-inc/gmi; 
+    const yearLongRegex = /\${YEAR4}/gmi;
+    // Year Short Regex
+    const yearShortRegex = /\${YEAR2}/gmi;
+    // Month Number Regex Text Short Regex (Eg. Jan)
+    const monthNumberRegex = /\${MONTHNUMBER}/gmi;
+    const monthTextLongRegex=/\${MONTHTEXTL}/gmi;
+    const monthTextShortRegex=/\${MONTHTEXTS}/gmi;
+    // Day Regex
+    const dayRegex = /\${DAY}/gmi;
+
+    const ampmuRegex = /\${AMPMU}/gmi;
+    // AM/PM Lowercase Regex
+    const ampmlRegex = /\${AMPML}/gmi;
+    // 12 Hours Format Regex
+    const h12Regex = /\${H12}/gmi;
+    // 24 Hours Format Regex
+    const h24Regex = /\${H24}/gmi;
+    // Minutes Regex
+    const minRegex = /\${MIN}/gmi;
+    // Seconds Regex
+    const secRegex = /\${SEC}/gmi;
+    
+    //var vincMatched = pattern.match(vincRegex); 
+    
+
+    pattern=pattern.replaceAll(vincRegex,version);
+    //year
+    pattern=pattern.replaceAll(yearLongRegex,date.year.toString());
+    pattern=pattern.replaceAll(yearShortRegex,date.year.toString().slice(2,4));
+    //month command
+    let months_str = monthNumber_2_str(date.month);
+    pattern=pattern.replaceAll(monthNumberRegex,months_str.monthStr);
+    pattern=pattern.replaceAll(monthTextLongRegex,months_str.monthLongStr);
+    pattern=pattern.replaceAll(monthTextShortRegex,months_str.monthShortStr);
+    //day
+    pattern=pattern.replaceAll(dayRegex,date.day.toString().padStart(2, '0'));
+    
+    let hours_str = hours_2_str(date.hours);
+    pattern=pattern.replaceAll(h24Regex,hours_str.h24);
+    pattern=pattern.replaceAll(h12Regex,hours_str.h12);
+    pattern=pattern.replaceAll(ampmlRegex,hours_str.ampmL);
+    pattern=pattern.replaceAll(ampmuRegex,hours_str.ampmU);
+    
+    pattern=pattern.replaceAll(minRegex,date.minutes.toString().padStart(2, '0'));
+    pattern=pattern.replaceAll(secRegex,date.seconds.toString().padStart(2, '0'));
+    
+    return pattern;
 }
 
 
+function getCurrentDateTime()
+{
+    var date = new Date();
+    var [year, month, day] = [date.getFullYear(), date.getMonth()+1, date.getDate()];
+    var [hours, minutes, seconds] = [date.getHours(), date.getMinutes(), date.getSeconds()];
 
+    const dateTime_string = '{"year":'+year+', "month":'+ month +', "day":'+day+',"hours":'+hours+', "minutes":'+ minutes +', "seconds":'+seconds+'}';
+    const dateTimeJSON = JSON.parse(dateTime_string);
+    return dateTimeJSON;
+}
+
+function hours_2_str(hours,ampmU)
+{
+    var h12 = hours.toString().padStart(2, '0');
+    var h24 = hours.toString().padStart(2, '0');
+    var ampmU = 'AM';
+    var ampmL = 'am';
+    if (hours > 11) {
+        var ampmU = 'PM';
+        var ampmL = 'pm';
+    }
+    if (hours > 12) {
+        h12 = hours - 12;
+        var ampmU = 'PM';
+        var ampmL = 'pm';
+    }
+    if (hours == 0) {
+        h12 = 12;
+        var ampmU = 'AM';
+        var ampmL = 'am';
+    }
+    return {h24,h12,ampmU,ampmL};
+}
+
+function monthNumber_2_str(month)
+{
+    var monthStr = month.toString().padStart(2, '0');
+    let monthLongStr="";
+    let monthShortStr="";
+    switch (month) {
+        case 1:
+            monthLongStr = 'January';
+            monthShortStr = 'Jan';
+            break;
+        case 2:
+            monthLongStr = 'February';
+            monthShortStr = 'Feb';
+            break;
+        case 3:
+            monthLongStr = 'March';
+            monthShortStr = 'Mar';
+            break;
+        case 4:
+            monthLongStr = 'March';
+            monthShortStr = 'Mar';
+            break;
+        case 5:
+            monthLongStr = 'May';
+            monthShortStr = 'May';
+            break;
+        case 6:
+            monthLongStr = 'June';
+            monthShortStr = 'Jun';
+            break;
+        case 7:
+            monthLongStr = 'July';
+            monthShortStr = 'Jul';
+            break;
+        case 8:
+            monthLongStr = 'August';
+            monthShortStr = 'Aug';
+            break;
+        case 9:
+            monthLongStr = 'September';
+            monthShortStr = 'Sep';
+            break;
+        case 10:
+            monthLongStr = 'October';
+            monthShortStr = 'Oct';
+            break;
+        case 11:
+            monthLongStr = 'November';
+            monthShortStr = 'Nov';
+            break;
+        case 12:
+            monthLongStr = 'December';
+            monthShortStr = 'Dec';
+        default:
+            monthLongStr = 'Unknown';
+            monthShortStr = 'Unknown';
+            break;
+    }
+    return {monthStr, monthLongStr, monthShortStr};
+};
 //  ╭──────────────────────────────────────────────────────────────────────────────╮
 //  │                           ● Function deactivate ●                            │
 //  │                                                                              │

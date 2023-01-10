@@ -1,3 +1,4 @@
 {
-    "version-inc.statusBarPrompt": true
+    "version-inc.statusBarPrompt": true,
+    "version-inc.useDisplayName": true
 }
