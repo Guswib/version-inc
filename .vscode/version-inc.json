@@ -1,0 +1,39 @@
+{
+	"version": "0.0.0",
+	"dateTime": {},
+	"last_version": "0.0.0",
+	"last_dateTime": {},
+	"json-files": [
+		{
+			"Filename": "File1.json",
+			"FileLocation": "${workspaceFolder}",
+			"Enable": true
+		},
+		{
+			"Filename": "File2.json",
+			"FileLocation": "${workspaceFolder}",
+			"Enable": true
+		}
+	],
+	"txt-files": [
+		{
+			"Filename": "File1.ABC",
+			"FileLocation": "${workspaceFolder}",
+			"Enable": true,
+			"Patterns": [
+				"Version v-inc"
+			]
+		},
+		{
+			"Filename": "File2.ABC",
+			"FileLocation": "${workspaceFolder}",
+			"Enable": true,
+			"Patterns": [
+				"File Version...: V-INC",
+				"Product version: v-inc",
+				"Last Modification: ${MONTHTEXTL} ${DATE} ${YEAR4}",
+				"     At: ${H12}:${MIN}:${SEC} ${AMPMU}"
+			]
+		}
+	]
+}

@@ -893,16 +893,29 @@ async function updateVersion_txtFile(FilePath,patterns,newVersion,new_dateTime,l
 //  │                       • Creates a ful path to a file •                       │
 //  ╰──────────────────────────────────────────────────────────────────────────────╯
 function sub_2_filepath(location, fileName) {
-    if (location == "${workspaceFolder}") { // Workspace variable folder provided
-        var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
-    } else if (location == "${globalStorage}") { // Global storage for example files
-        var location = myContext.globalStoragePath;
-    } else if (location == "") { // Default to workspace folder if none is provided
-        var location = vscode.workspace.workspaceFolders[0].uri.fsPath;
-    } else {
-        var location = vscode.workspace.workspaceFolders[0].uri.fsPath + '\\' + location; // Path relative to workspace folder
+    let workspace = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const workSpaceFolderRX = /\${workspaceFolder}/gmi;
+    const globFolderRX = /\${globalStorage}/gmi;
+    let locationRelative = true;
+    let path =workspace;
+
+    if(location.match(workSpaceFolderRX)) {
+            locationRelative=false;
+            path=location.replace(workSpaceFolderRX,workspace);
+        }
+    if(location.match(globFolderRX)) {
+            locationRelative=false;
+            path=location.replace(globFolderRX,myContext.globalStoragePath);
+        }
+    if (location == ""){
+        locationRelative=false;
+        path =workspace;
     }
-    let targetFilePath = join(location, fileName);                              // Full path to target file
+
+    if(locationRelative){
+        path = join(path, location);
+    }
+    let targetFilePath = join(path, fileName);                              // Full path to target file
     return targetFilePath;
 }
 
